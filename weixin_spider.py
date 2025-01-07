@@ -4,6 +4,7 @@ import markdown
 import re
 import time
 from datetime import datetime
+from image_processor import ImageProcessor
 
 class WeixinArticleSpider:
     def __init__(self):
@@ -65,8 +66,7 @@ class WeixinArticleSpider:
             return None
 
     def clean_html(self, html_content):
-        """清理HTML内容，保留基本格式"""
-        # 使用BeautifulSoup进行解析
+        """清理HTML内容，保留基本格式和图片位置"""
         soup = BeautifulSoup(html_content, 'html.parser')
 
         # 删除script和style标签
@@ -79,6 +79,13 @@ class WeixinArticleSpider:
 
         for p in soup.find_all('p'):
             p.append(soup.new_string('\n'))
+
+        # 处理图片标签，将其替换为特殊标记
+        for img in soup.find_all('img'):
+            if img.get('data-src'):
+                # 使用特殊标记替换图片，保留URL作为引用
+                placeholder = f"__IMG_PLACEHOLDER_{img['data-src']}__"
+                img.replace_with(soup.new_string(placeholder))
 
         # 获取处理后的文本
         text = soup.get_text()
@@ -94,15 +101,41 @@ class WeixinArticleSpider:
             return False
 
         try:
-            with open(output_file, 'w', encoding='utf-8') as f:
-                # 写入标题
-                f.write(f"# {data['title']}\n\n")
+            # 初始化图片处理器
+            img_processor = ImageProcessor()
 
-                # 写入时间戳
+            # 处理所有图片并创建URL映射
+            url_to_markdown = {}
+            for img in data['images']:
+                if 'url' in img and img['url']:
+                    result = img_processor.download_and_compress(
+                        image_url=img['url'],
+                        alt_text=img.get('alt', '')
+                    )
+                    if result:
+                        # 创建markdown格式的图片引用，使用正确的相对路径
+                        img_markdown = f"![{result['alt_text']}](output/images/{result['file_name']})"
+                        # 将原始URL映射到markdown格式
+                        url_to_markdown[img['url']] = img_markdown
+
+            # 写入Markdown文件
+            with open(output_file, 'w', encoding='utf-8') as f:
+                # 写入标题和元数据
+                f.write(f"# {data['title']}\n\n")
+                f.write(f"作者: {data['author']}\n\n")
                 f.write(f"*抓取时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
 
-                # 写入正文
-                f.write(data['content'])
+                if data['description']:
+                    f.write(f"> {data['description']}\n\n")
+
+                # 处理正文内容，替换图片占位符
+                content = data['content']
+                for url, markdown_img in url_to_markdown.items():
+                    placeholder = f"__IMG_PLACEHOLDER_{url}__"
+                    content = content.replace(placeholder, markdown_img)
+
+                # 写入处理后的正文
+                f.write(content)
 
             return True
 
@@ -111,7 +144,9 @@ class WeixinArticleSpider:
             return False
 
 def main():
-    url = "https://mp.weixin.qq.com/s/-nlA13tKEHNL7yH3VjVMrA"
+    url="https://mp.weixin.qq.com/s/ZXyPAq3ZMeKV7Sdd_qaWFQ"
+    # url="https://mp.weixin.qq.com/s/Is9jM8LE0-Hk8VhZTKn2qw"
+    # url = "https://mp.weixin.qq.com/s/-nlA13tKEHNL7yH3VjVMrA"
     spider = WeixinArticleSpider()
 
     # 获取文章内容
