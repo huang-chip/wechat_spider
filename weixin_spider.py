@@ -113,28 +113,32 @@ class WeixinArticleSpider:
                         alt_text=img.get('alt', '')
                     )
                     if result:
-                        # 创建markdown格式的图片引用，使用正确的相对路径
+                        # 创建markdown格式的图片引用
                         img_markdown = f"![{result['alt_text']}](output/images/{result['file_name']})"
-                        # 将原始URL映射到markdown格式
                         url_to_markdown[img['url']] = img_markdown
 
             # 写入Markdown文件
             with open(output_file, 'w', encoding='utf-8') as f:
                 # 写入标题和元数据
                 f.write(f"# {data['title']}\n\n")
-                f.write(f"作者: {data['author']}\n\n")
+                f.write(f"作者：{data['author']}\n\n")
                 f.write(f"*抓取时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*\n\n")
 
                 if data['description']:
                     f.write(f"> {data['description']}\n\n")
 
-                # 处理正文内容，替换图片占位符
+                # 处理正文内容
                 content = data['content']
+
+                # 1. 替换图片占位符
                 for url, markdown_img in url_to_markdown.items():
                     placeholder = f"__IMG_PLACEHOLDER_{url}__"
                     content = content.replace(placeholder, markdown_img)
 
-                # 写入处理后的正文
+                # 2. 格式化文本内容
+                content = self.format_text(content)
+
+                # 3. 写入处理后的正文
                 f.write(content)
 
             return True
@@ -142,6 +146,41 @@ class WeixinArticleSpider:
         except Exception as e:
             print(f"Error saving to markdown: {str(e)}")
             return False
+
+    def format_text(self, text):
+        """格式化文本内容
+        1. 处理换行符
+        2. 处理图片标记
+        3. 英文符号转中文符号
+        """
+        # 0. 处理换行符，将连续的换行符转换为空字符
+        text = re.sub(r'\n+', '', text)
+
+        # 1. 将图片标记替换为换行
+        text = re.sub(r'!\[.*?\]\(output/images/[a-f0-9]{32}\.(jpg|png|gif)\)', '\n\n', text)
+
+        # 2. 英文符号转中文符号
+        punctuation_map = {
+            ',': '，',
+            '.': '。',
+            '!': '！',
+            '?': '？',
+            ':': '：',
+            ';': '；',
+            '(': '（',
+            ')': '）',
+            '[': '【',
+            ']': '】',
+        }
+
+        for en, cn in punctuation_map.items():
+            # 使用正则确保只替换独立的标点符号，避免替换URL等内容中的标点
+            text = re.sub(rf'(?<![a-zA-Z]){re.escape(en)}(?![a-zA-Z])', cn, text)
+
+        # 3. 清理多余的空行
+        text = re.sub(r'\n{3,}', '\n\n', text)
+
+        return text.strip()
 
 def main():
     url="https://mp.weixin.qq.com/s/ZXyPAq3ZMeKV7Sdd_qaWFQ"
